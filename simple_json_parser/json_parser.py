@@ -2,6 +2,9 @@ import json
 import sys
 
 def parse_json_and_print_values(json_str, *keys):
+    if not json_str.strip():  # Check if the input is empty or whitespace only
+        return  # Ignore empty lines
+
     try:
         # Parse the JSON string into a dictionary
         data = json.loads(json_str)
@@ -13,7 +16,8 @@ def parse_json_and_print_values(json_str, *keys):
         print(' - '.join(values))
                 
     except json.JSONDecodeError as e:
-        print(f"Invalid JSON data: {e}", file=sys.stderr)
+        # Silently ignore lines that are not valid JSON
+        print(f"Warning, not a JSON string: {e}", file=sys.stderr)
     except Exception as e:
         print(f"An error occurred: {e}", file=sys.stderr)
 
@@ -25,8 +29,9 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: echo '<json_string>' | python script.py <key1> <key2> ... <keyN>", file=sys.stderr)
         sys.exit(1)
+
+    keys = sys.argv[1:]
     
     # Read JSON string from stdin
-    json_str = sys.stdin.read()
-    keys = sys.argv[1:]
-    parse_json_and_print_values(json_str, *keys)
+    for line in sys.stdin:
+        parse_json_and_print_values(line, *keys)
