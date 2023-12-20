@@ -1,0 +1,6 @@
+[flake8]
+max-line-length = 120
+indent-size = 4
+show-source = True
+exclude = venv
+extend-ignore = E402
