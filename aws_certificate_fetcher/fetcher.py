@@ -7,9 +7,11 @@ CERTIFICATE_ARN = 'arn:aws:acm:{aws_region}:{account_id}:certificate/{certificat
 
 class CertificateFetcher:
 
-    def __init__(self, certificate_arn, environment, aws_region="us-east-1") -> None:
-        self.certificate_arn = certificate_arn
+    def __init__(self, environment, aws_region="us-east-1") -> None:
         self.aws_region = aws_region
+
+        self.account_id = ''
+        self.fetcher_certificate_arn = ''
 
         # Initialize boto3 clients for the specified region
         self.elbv2_client = boto3.client('elbv2', region_name=self.aws_region)
@@ -18,19 +20,27 @@ class CertificateFetcher:
         self.apprunner_client = boto3.client('apprunner', region_name=self.aws_region)
         self.elasticbeanstalk_client = boto3.client('elasticbeanstalk', region_name=self.aws_region)
 
-        account_id = ''
-
         match environment:
             case "staging":
-                account_id = '589470546847'
+                self.account_id = '589470546847'
             case "production":
-                account_id = '114712639188'
+                self.account_id = '114712639188'
             case _:
                 print(f"There is no such environment available with this naming - {environment}.")
                 sys.exit(1)
 
-        self.fetcher_certificate_arn = CERTIFICATE_ARN.format(aws_region=aws_region, account_id=account_id, certificate_arn=self.certificate_arn)
-
+    def set_fetcher_certificate_arn(self, certificate_arn="", domain_name=""):
+        if certificate_arn:
+            self.fetcher_certificate_arn = CERTIFICATE_ARN.format(aws_region=self.aws_region, account_id=self.account_id, certificate_arn=certificate_arn)
+        elif domain_name:
+            self.fetcher_certificate_arn = self.get_certificate_arn_by_domain_name(domain_name)
+            if not self.fetcher_certificate_arn:
+                print(f"Certificate with relevant DNS domain name failed to retrieve.")
+                sys.exit(1)
+        else:
+            print(f"Failed to retrieve correct certificate arn.")
+            sys.exit(1)
+        
         print(f"Certificate arn to be checked - {self.fetcher_certificate_arn}")
 
     def check_classic_load_balancers(self):
@@ -121,3 +131,15 @@ class CertificateFetcher:
                         # Check if the SSLCertificateArns matches the certificate ARN
                         if setting['Value'] == self.fetcher_certificate_arn:
                             print(f"Certificate used in Elastic Beanstalk environment: {env_name}")
+    
+    def get_certificate_arn_by_domain_name(self, domain_name):
+        acm_client = boto3.client('acm', region_name=self.aws_region)
+        # List certificates with pagination
+        paginator = acm_client.get_paginator('list_certificates')
+        for page in paginator.paginate(CertificateStatuses=['ISSUED']):
+            for cert_summary in page['CertificateSummaryList']:
+                # Check if the certificate domain name matches the specified domain name
+                if cert_summary['DomainName'] == domain_name:
+                    # Return the certificate ARN
+                    return cert_summary['CertificateArn']
+        return None
