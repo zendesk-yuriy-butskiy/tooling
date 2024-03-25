@@ -2,6 +2,8 @@ import boto3
 
 import sys
 
+from botocore.exceptions import ClientError
+
 # Define the certificate ARN template
 CERTIFICATE_ARN = 'arn:aws:acm:{aws_region}:{account_id}:certificate/{certificate_arn}'
 
@@ -116,21 +118,26 @@ class CertificateFetcher:
 
     def check_elastic_beanstalk_environments(self):
         print("Checking Elastic Beanstalk environments...")
-        paginator = self.elasticbeanstalk_client.get_paginator('describe_environments')
-        for page in paginator.paginate():
-            environments = page['Environments']
-            for env in environments:
-                env_name = env['EnvironmentName']
-                settings_response = self.elasticbeanstalk_client.describe_configuration_settings(
-                    ApplicationName=env['ApplicationName'],
-                    EnvironmentName=env_name
-                )
-                option_settings = settings_response['ConfigurationSettings'][0]['OptionSettings']
-                for setting in option_settings:
-                    if setting['Namespace'] == 'aws:elbv2:listener:443' and setting['OptionName'] == 'SSLCertificateArns':
-                        # Check if the SSLCertificateArns matches the certificate ARN
-                        if setting['Value'] == self.fetcher_certificate_arn:
-                            print(f"Certificate used in Elastic Beanstalk environment: {env_name}")
+
+        # It seems for Elastic Beanstalk we are lacking permissions. Due to that - covering it with an additional exception handling to pass the execution
+        try:
+            paginator = self.elasticbeanstalk_client.get_paginator('describe_environments')
+            for page in paginator.paginate():
+                environments = page['Environments']
+                for env in environments:
+                    env_name = env['EnvironmentName']
+                    settings_response = self.elasticbeanstalk_client.describe_configuration_settings(
+                        ApplicationName=env['ApplicationName'],
+                        EnvironmentName=env_name
+                    )
+                    option_settings = settings_response['ConfigurationSettings'][0]['OptionSettings']
+                    for setting in option_settings:
+                        if setting['Namespace'] == 'aws:elbv2:listener:443' and setting['OptionName'] == 'SSLCertificateArns':
+                            # Check if the SSLCertificateArns matches the certificate ARN
+                            if setting['Value'] == self.fetcher_certificate_arn:
+                                print(f"Certificate used in Elastic Beanstalk environment: {env_name}")
+        except ClientError as err:
+            print(f"Failed execution due to: {err}\nSkipping.")
     
     def get_certificate_arn_by_domain_name(self, domain_name):
         acm_client = boto3.client('acm', region_name=self.aws_region)
